@@ -77,7 +77,7 @@ Vagrant.configure('2') do |config|
       next unless i == NUM_WORKER_NODE
 
       node.vm.provision 'ansible' do |ansible|
-        ansible.config_file = 'ansible/ansible.cfg'
+        ansible.inventory_path = 'ansible/inventory.yml'
         ansible.playbook = 'ansible/playbook.yml'
         ansible.limit = 'all'
       end
