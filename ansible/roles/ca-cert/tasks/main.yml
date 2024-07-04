@@ -1,0 +1,69 @@
+- name: Generate certificate signing request for CA
+  block:
+    - name: Generate openssl key for signing certificates
+      community.crypto.openssl_privatekey:
+        state: present
+        type: RSA
+        size: 2048
+        path: ~/ca.key
+    - name: Generate certificate signing request
+      community.crypto.openssl_csr:
+        state: present
+        path: ~/ca.csr
+        privatekey_path: ~/ca.key
+        CN: "KUBERNETES-CA"
+        O: "Kubernetes"
+        basic_constraints:
+          - "CA:TRUE"
+    - name: Self-sign the certificate signing request using own private key
+      community.crypto.x509_certificate:
+        state: present
+        provider: selfsigned
+        csr_path: ~/ca.csr
+        path: ~/ca.crt
+        privatekey_path: ~/ca.key
+        selfsigned_not_after: +1000d
+    - name: Copy CA certificate to host
+      ansible.builtin.copy:
+        remote_src: true
+        src: ~/ca.crt
+        dest: /vagrant/ansible/certs/ca.crt
+        mode: "644"
+
+- name: Generate certificates for kubernetes components
+  loop:
+    - filename: admin
+      CN: admin
+      O: "system:masters"
+    - filename: kube-controller-manager
+      CN: "system:kube-controller-manager"
+      O: "system:kube-controller-manager"
+    - filename: kube-proxy
+      CN: "system:kube-proxy"
+      O: "system:node-proxier"
+    - filename: kube-proxy
+      CN: "system:kube-proxy"
+      O: "system:node-proxier"
+    - filename: kube-scheduler
+      CN: "system:kube-scheduler"
+      O: "system:kube-scheduler"
+    - filename: kube-apiserver
+      CN: "kube-apiserver"
+      O: "Kubernetes"
+    - filename: "apiserver-kubelet-client"
+      CN: "kube-apiserver-kubelet-client"
+      O: "system:masters"
+    - filename: "etcd-server"
+      CN: "etcd-server"
+      O: "Kubernetes"
+    - filename: service-account
+      CN: service-accounts
+      O: Kubernetes
+  ansible.builtin.include_tasks:
+    file: item-certificate.yml
+
+- name: Copy certificate verification script
+  ansible.builtin.copy:
+    src: "cert_verify.sh"
+    dest: "~/cert_verify.sh"
+    mode: "755"

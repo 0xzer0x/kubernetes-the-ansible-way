@@ -1,0 +1,28 @@
+- name: Enable password authentication
+  ansible.builtin.lineinfile:
+    state: present
+    path: /etc/ssh/sshd_config
+    regexp: "{{ item['regex'] }}"
+    line: "{{ item['line'] }}"
+  loop:
+    - regex: "#?PasswordAuthentication (yes|no)"
+      line: "PasswordAuthentication yes"
+    - regex: "#?Include /etc/ssh/sshd_config.d/\\*.conf"
+      line: "#Include /etc/ssh/sshd_config.d/*.conf"
+    - regex: "KbdInteractiveAuthentication no"
+      line: "KbdInteractiveAuthentication yes"
+
+- name: Create ssh directory
+  ansible.builtin.file:
+    state: directory
+    path: "/home/vagrant/.ssh"
+    mode: "700"
+    owner: "vagrant"
+    group: "vagrant"
+
+- name: Install sshpass on control node 1
+  when: "ansible_facts['nodename'] == 'controlplane01'"
+  ansible.builtin.apt:
+    update_cache: true
+    state: present
+    name: sshpass

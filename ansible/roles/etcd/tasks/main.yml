@@ -1,0 +1,69 @@
+- name: Download and install etcd binaries
+  block:
+    - name: Download and extract the binaries
+      ansible.builtin.unarchive:
+        remote_src: true
+        src: "https://github.com/coreos/etcd/releases/download/{{ etcd_version }}/etcd-{{ etcd_version }}-linux-amd64.tar.gz"
+        dest: /tmp
+    - name: Move the binaries to /usr/local/bin
+      loop:
+        - "etcd"
+        - "etcdctl"
+        - "etcdutl"
+      ansible.builtin.copy:
+        remote_src: true
+        src: "/tmp/etcd-{{ etcd_version }}-linux-amd64/{{ item }}"
+        dest: "/usr/local/bin/"
+        mode: "755"
+
+- name: Create etcd directories
+  loop:
+    - "/etc/etcd"
+    - "/var/lib/etcd"
+    - "/var/lib/kubernetes/pki"
+  ansible.builtin.file:
+    state: directory
+    path: "{{ item }}"
+    mode: "755"
+
+- name: Copy files to their location
+  loop:
+    - filename: "etcd-server.key"
+      path: "/etc/etcd"
+    - filename: "etcd-server.crt"
+      path: "/etc/etcd"
+    - filename: "ca.crt"
+      path: "/var/lib/kubernetes/pki"
+  ansible.builtin.copy:
+    remote_src: true
+    src: "/home/vagrant/{{ item.filename }}"
+    dest: "{{ item.path }}/{{ item.filename }}"
+    mode: "644"
+
+- name: Add symlink to CA certificate
+  ansible.builtin.file:
+    state: link
+    src: "/var/lib/kubernetes/pki/ca.crt"
+    path: "/etc/etcd/ca.crt"
+
+- name: Copy etcd systemd unit
+  ansible.builtin.template:
+    src: "etcd.service.t2"
+    dest: "/etc/systemd/system/etcd.service"
+    mode: "644"
+
+- name: Add firewall rules to enable etcd ports
+  loop:
+    - 2379
+    - 2380
+  community.general.ufw:
+    rule: allow
+    to_port: "{{ item }}"
+    proto: tcp
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+    name: etcd
+    state: started
+    enabled: true

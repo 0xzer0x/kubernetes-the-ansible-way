@@ -1,0 +1,33 @@
+ungrouped:
+  hosts:
+    loadbalancer:
+      ansible_connection: ssh
+      ansible_host: 192.168.56.30
+      ansible_user: vagrant
+      ansible_ssh_private_key_file: ../.vagrant/machines/loadbalancer/virtualbox/private_key
+
+controlplane:
+  hosts:
+    controlplane01:
+      ansible_connection: ssh
+      ansible_host: 192.168.56.11
+      ansible_user: vagrant
+      ansible_ssh_private_key_file: ../.vagrant/machines/controlplane01/virtualbox/private_key
+    controlplane02:
+      ansible_connection: ssh
+      ansible_host: 192.168.56.12
+      ansible_user: vagrant
+      ansible_ssh_private_key_file: ../.vagrant/machines/controlplane02/virtualbox/private_key
+
+nodes:
+  hosts:
+    node01:
+      ansible_connection: ssh
+      ansible_host: 192.168.56.21
+      ansible_user: vagrant
+      ansible_ssh_private_key_file: ../.vagrant/machines/node01/virtualbox/private_key
+    node02:
+      ansible_connection: ssh
+      ansible_host: 192.168.56.22
+      ansible_user: vagrant
+      ansible_ssh_private_key_file: ../.vagrant/machines/node02/virtualbox/private_key

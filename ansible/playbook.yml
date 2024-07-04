@@ -1,0 +1,135 @@
+- name: Add kernel modules
+  hosts: all
+  become: true
+  tags: setup
+  roles:
+    - kernel-modules
+    - ssh
+    - dns
+    - kubectl
+
+- name: Create SSH keypair for master
+  hosts: controlplane01
+  tags: ssh
+  tasks:
+    - name: Create SSH keypair
+      community.crypto.openssh_keypair:
+        path: "/home/vagrant/.ssh/master_id_ed25519"
+        type: ed25519
+        owner: vagrant
+        group: vagrant
+
+    - name: Register the public key value
+      ansible.builtin.command:
+        cmd: "cat /home/vagrant/.ssh/master_id_ed25519.pub"
+      register: master_id_pub
+      changed_when: false
+
+    - name: Add SSH config
+      ansible.builtin.copy:
+        content: |
+          Host *
+          IdentityFile ~/.ssh/master_id_ed25519
+        dest: "/home/vagrant/.ssh/config"
+        mode: "644"
+
+- name: Add master public key to authorized keys
+  hosts: all:!controlplane01
+  tags: configure
+  tasks:
+    - name: Add master to authorized key
+      ansible.posix.authorized_key:
+        user: "{{ ansible_user }}"
+        key: "{{ hostvars['controlplane01'].master_id_pub.stdout }}"
+
+- name: Create CA and client certificates
+  hosts: controlplane01
+  tags: certificates
+  roles:
+    - ca-cert
+
+- name: Distribute the certificates
+  hosts: all
+  tags: certificates
+  tasks:
+    - name: Copy all keys and certificates to control plane nodes
+      when: inventory_hostname in groups['controlplane']
+      with_fileglob:
+        - "certs/*.crt"
+        - "certs/*.key"
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "~/{{ item | regex_replace('.*/(.*)$', '\\1') }}"
+        mode: "644"
+
+    - name: Copy all keys and certificates to control plane nodes
+      when: inventory_hostname in groups['nodes']
+      loop:
+        - ca.crt
+        - kube-proxy.crt
+        - kube-proxy.key
+      ansible.builtin.copy:
+        src: "certs/{{ item }}"
+        dest: "~/{{ item }}"
+        mode: "644"
+
+- name: Create kubeconfig files
+  hosts: controlplane01
+  tags: kubeconfig
+  tasks:
+    - name: Generate kubeconfig file
+      loop:
+        - filename: kube-proxy
+          user: system:kube-proxy
+        - filename: kube-controller-manager
+          user: system:kube-controller-manager
+        - filename: kube-scheduler
+          user: system:kube-scheduler
+        - filename: admin
+          user: admin
+      ansible.builtin.shell:
+        cmd: >
+          kubectl config set-cluster kubernetes-the-hard-way
+          --certificate-authority={{ (item['user'] == 'admin') | ternary('', '/var/lib/kubernetes/pki/') + 'ca.crt' }}
+          --server=https://{{ (item['filename'] == 'kube-proxy') | ternary('192.168.1.30', '127.0.0.1') }}:6443
+          --kubeconfig=/vagrant/ansible/kubeconfig/{{ item['filename'] }}.kubeconfig
+
+          kubectl config set-credentials {{ item['user'] }}
+          --client-certificate={{ (item['user'] == 'admin') | ternary('', '/var/lib/kubernetes/pki/') + item['filename'] }}.crt
+          --client-key={{ (item['user'] == 'admin') | ternary('', '/var/lib/kubernetes/pki/') + item['filename'] }}.key
+          --kubeconfig=/vagrant/ansible/kubeconfig/{{ item['filename'] }}.kubeconfig
+
+          kubectl config set-context default
+          --cluster=kubernetes-the-hard-way
+          --user={{ item['user'] }}
+          --kubeconfig=/vagrant/ansible/kubeconfig/{{ item['filename'] }}.kubeconfig
+
+          kubectl config use-context default --kubeconfig=/vagrant/ansible/kubeconfig/{{ item['filename'] }}.kubeconfig
+
+- name: Distribute the kubeconfig files
+  hosts: all
+  tags: kubeconfig
+  tasks:
+    - name: Copy kube-proxy config to nodes
+      when: inventory_hostname in groups['nodes']
+      ansible.builtin.copy:
+        src: kubeconfig/kube-proxy.kubeconfig
+        dest: ~/kube-proxy.kubeconfig
+
+    - name: Copy control plane kubeconfig to control nodes
+      when: inventory_hostname in groups['controlplane']
+      loop:
+        - admin
+        - kube-controller-manager
+        - kube-scheduler
+      ansible.builtin.copy:
+        src: "kubeconfig/{{ item }}.kubeconfig"
+        dest: "~/{{ item }}.kubeconfig"
+        mode: "644"
+
+- name: Configure etcd cluster
+  hosts: controlplane
+  tags: etcd
+  roles:
+    - become: true
+      role: etcd

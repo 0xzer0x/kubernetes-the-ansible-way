@@ -1,0 +1,20 @@
+- name: Add environmental variables to /etc/environment
+  ansible.builtin.lineinfile:
+    path: /etc/environment
+    line: "{{ item['name'] }}={{ item['value'] }}"
+  loop:
+    - name: PRIMARY_IP
+      value: "{{ ansible_host }}"
+    - name: ARCH
+      value: amd64
+
+- name: Add other nodes to /etc/hosts
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    line: "{{ item }}"
+  loop:
+    - "192.168.56.11 controlplane01"
+    - "192.168.56.12 controlplane02"
+    - "192.168.56.21 node01"
+    - "192.168.56.22 node02"
+    - "192.168.56.30 loadbalancer"

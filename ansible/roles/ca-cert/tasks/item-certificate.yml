@@ -1,0 +1,106 @@
+- name: "Generate private key"
+  community.crypto.openssl_privatekey:
+    state: present
+    type: RSA
+    size: 2048
+    path: "~/{{ item['filename'] }}.key"
+
+- name: Generate certificate signing request
+  when: "item['filename'] is not search('apiserver|etcd')"
+  community.crypto.openssl_csr:
+    state: present
+    path: "~/{{ item['filename'] }}.csr"
+    privatekey_path: "~/{{ item['filename'] }}.key"
+    CN: "{{ item['CN'] }}"
+    O: "{{ item['O'] }}"
+
+- name: Generate certificate signing request for the API server
+  when: "item['filename'] == 'kube-apiserver'"
+  community.crypto.openssl_csr:
+    state: present
+    path: "~/{{ item['filename'] }}.csr"
+    privatekey_path: "~/{{ item['filename'] }}.key"
+    CN: "{{ item['CN'] }}"
+    O: "{{ item['O'] }}"
+    basic_constraints_critical: true
+    basic_constraints:
+      - "CA:FALSE"
+    key_usage_critical: true
+    key_usage:
+      - nonRepudiation
+      - digitalSignature
+      - keyEncipherment
+    extended_key_usage:
+      - serverAuth
+    subject_alt_name:
+      - "DNS:kubernetes"
+      - "DNS:kubernetes.default"
+      - "DNS:kubernetes.default.svc"
+      - "DNS:kubernetes.default.svc.cluster"
+      - "DNS:kubernetes.default.svc.cluster.local"
+      - "IP:10.96.0.1"
+      - "IP:192.168.56.11"
+      - "IP:192.168.56.12"
+      - "IP:192.168.56.30"
+      - "IP:127.0.0.1"
+
+- name: Generate certificate signing request for the API server kubelet client
+  when: "item['filename'] == 'apiserver-kubelet-client'"
+  community.crypto.openssl_csr:
+    state: present
+    path: "~/{{ item['filename'] }}.csr"
+    privatekey_path: "~/{{ item['filename'] }}.key"
+    CN: "{{ item['CN'] }}"
+    O: "{{ item['O'] }}"
+    basic_constraints_critical: true
+    basic_constraints:
+      - "CA:FALSE"
+    key_usage_critical: true
+    key_usage:
+      - nonRepudiation
+      - digitalSignature
+      - keyEncipherment
+    extended_key_usage:
+      - clientAuth
+
+- name: Generate certificate signing request for the etcd server
+  when: "item['filename'] == 'etcd-server'"
+  community.crypto.openssl_csr:
+    state: present
+    path: "~/{{ item['filename'] }}.csr"
+    privatekey_path: "~/{{ item['filename'] }}.key"
+    CN: "{{ item['CN'] }}"
+    O: "{{ item['O'] }}"
+    basic_constraints:
+      - "CA:FALSE"
+    key_usage:
+      - nonRepudiation
+      - digitalSignature
+      - keyEncipherment
+    subject_alt_name:
+      - IP:192.168.56.11
+      - IP:192.168.56.12
+      - IP:127.0.0.1
+
+- name: Genrate the X509 certificate using the CA key
+  community.crypto.x509_certificate:
+    state: present
+    provider: ownca
+    ownca_path: ~/ca.crt
+    ownca_privatekey_path: ~/ca.key
+    ownca_not_after: +1000d
+    csr_path: "~/{{ item['filename'] }}.csr"
+    privatekey_path: "~/{{ item['filename'] }}.key"
+    path: "~/{{ item['filename'] }}.crt"
+
+- name: Copy key and certificate files to /vagrant
+  ansible.builtin.copy:
+    remote_src: true
+    src: "~/{{ file }}"
+    dest: "/vagrant/ansible/certs/{{ file }}"
+    mode: "644"
+  loop:
+    - "{{ item['filename'] }}.key"
+    - "{{ item['filename'] }}.crt"
+  loop_control:
+    loop_var: file
