@@ -23,6 +23,12 @@
 - name: Install sshpass on control node 1
   when: "ansible_facts['nodename'] == 'controlplane01'"
   ansible.builtin.apt:
-    update_cache: true
     state: present
     name: sshpass
+
+- name: Add firewall rules to allow ssh
+  community.general.ufw:
+    state: enabled
+    rule: allow
+    proto: tcp
+    to_port: 22

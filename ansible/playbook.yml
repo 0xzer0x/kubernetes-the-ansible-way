@@ -136,3 +136,12 @@
     - become: true
       tags: controller
       role: controller
+
+- name: Configure the load balancer
+  hosts: loadbalancer
+  roles:
+    - become: true
+      role: haproxy
+      tags:
+        - loadbalancer
+        - haproxy
