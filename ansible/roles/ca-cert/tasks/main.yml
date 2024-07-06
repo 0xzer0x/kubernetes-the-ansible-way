@@ -23,11 +23,14 @@
         path: ~/ca.crt
         privatekey_path: ~/ca.key
         selfsigned_not_after: +1000d
-    - name: Copy CA certificate to host
+    - name: Copy CA certificate and key to host
+      loop:
+        - "ca.crt"
+        - "ca.key"
       ansible.builtin.copy:
         remote_src: true
-        src: ~/ca.crt
-        dest: /vagrant/ansible/certs/ca.crt
+        src: "~/{{ item }}"
+        dest: "/vagrant/ansible/certs/{{ item }}"
         mode: "644"
 
 - name: Generate certificates for kubernetes components

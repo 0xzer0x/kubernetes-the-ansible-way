@@ -55,8 +55,8 @@
     - name: Copy all keys and certificates to control plane nodes
       when: inventory_hostname in groups['controlplane']
       with_fileglob:
-        - "certs/*.crt"
-        - "certs/*.key"
+        - "ansible/certs/*.crt"
+        - "ansible/certs/*.key"
       ansible.builtin.copy:
         src: "{{ item }}"
         dest: "~/{{ item | regex_replace('.*/(.*)$', '\\1') }}"
@@ -69,7 +69,7 @@
         - kube-proxy.crt
         - kube-proxy.key
       ansible.builtin.copy:
-        src: "certs/{{ item }}"
+        src: "ansible/certs/{{ item }}"
         dest: "~/{{ item }}"
         mode: "644"
 
