@@ -1,0 +1,100 @@
+- name: Set Kubernetes version
+  block:
+    - name: Get latest stable version
+      ansible.builtin.get_url:
+        url: https://dl.k8s.io/release/stable.txt
+        dest: /tmp/k8s_version.txt
+        mode: "644"
+    - name: Set version variable value
+      changed_when: false
+      ansible.builtin.command:
+        cmd: "cat /tmp/k8s_version.txt"
+      register: k8s_version
+
+- name: Download controller binaries
+  loop:
+    - kube-apiserver
+    - kube-controller-manager
+    - kube-scheduler
+    - kubectl
+  ansible.builtin.get_url:
+    url: "https://dl.k8s.io/release/{{ k8s_version.stdout }}/bin/linux/amd64/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    mode: "755"
+
+- name: Ensure /var/lib/kubernetes/pki is present
+  ansible.builtin.file:
+    state: directory
+    path: /var/lib/kubernetes/pki
+    mode: "755"
+
+- name: Copy key files to /var/lib/kubernetes/pki
+  loop: >
+    {{
+    [ 'ca',
+      'kube-apiserver',
+      'service-account',
+      'apiserver-kubelet-client',
+      'etcd-server',
+      'kube-scheduler',
+      'kube-controller-manager' ] | product(['crt', 'key'])
+      | map('join', '.') | list
+    }}
+  ansible.builtin.copy:
+    remote_src: true
+    src: "/home/vagrant/{{ item }}"
+    dest: "/var/lib/kubernetes/pki/{{ item }}"
+    mode: "600"
+    owner: root
+    group: root
+
+- name: Generate data encryption key
+  changed_when: false
+  ansible.builtin.shell:
+    cmd: "head -c 32 /dev/urandom | base64"
+  register: "generate_key"
+
+- name: Copy encryption configuration to /var/lib/kubernetes
+  vars:
+    encryption_key: "{{ generate_key.stdout }}"
+  ansible.builtin.template:
+    src: encryption-config.yml.t2
+    dest: "/var/lib/kubernetes/encryption-config.yml"
+    mode: "644"
+
+- name: Copy kubeconfig to /var/lib/kubernetes
+  loop:
+    - kube-controller-manager
+    - kube-scheduler
+  ansible.builtin.copy:
+    remote_src: true
+    src: "/home/vagrant/{{ item }}.kubeconfig"
+    dest: "/var/lib/kubernetes/{{ item }}.kubeconfig"
+    mode: "600"
+
+- name: Copy systemd service unit
+  loop:
+    - kube-apiserver
+    - kube-controller-manager
+    - kube-scheduler
+  ansible.builtin.template:
+    src: "{{ item }}.service.t2"
+    dest: "/etc/systemd/system/{{ item }}.service"
+    mode: "644"
+
+- name: Add firewall rules to allow API server traffic
+  community.general.ufw:
+    rule: allow
+    proto: tcp
+    to_port: 6443
+
+- name: Start controller services
+  loop:
+    - kube-apiserver
+    - kube-controller-manager
+    - kube-scheduler
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+    enabled: true
+    state: started
+    name: "{{ item }}"

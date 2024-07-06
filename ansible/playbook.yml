@@ -127,9 +127,12 @@
         dest: "~/{{ item }}.kubeconfig"
         mode: "644"
 
-- name: Configure etcd cluster
+- name: Configure the control plane components
   hosts: controlplane
-  tags: etcd
   roles:
     - become: true
+      tags: etcd
       role: etcd
+    - become: true
+      tags: controller
+      role: controller
