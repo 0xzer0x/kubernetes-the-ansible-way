@@ -78,6 +78,7 @@
   tags: kubeconfig
   tasks:
     - name: Generate kubeconfig file
+      changed_when: true
       loop:
         - filename: kube-proxy
           user: system:kube-proxy
@@ -115,6 +116,7 @@
       ansible.builtin.copy:
         src: kubeconfig/kube-proxy.kubeconfig
         dest: ~/kube-proxy.kubeconfig
+        mode: "644"
 
     - name: Copy control plane kubeconfig to control nodes
       when: inventory_hostname in groups['controlplane']
@@ -145,3 +147,10 @@
       tags:
         - loadbalancer
         - haproxy
+
+- name: Install CRI workers
+  hosts: nodes
+  roles:
+    - become: true
+      role: containerd
+      tags: cri

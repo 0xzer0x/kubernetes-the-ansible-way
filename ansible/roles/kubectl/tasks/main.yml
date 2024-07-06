@@ -1,18 +1,5 @@
-- name: Set kubernetes version
-  block:
-    - name: Get latest kubernetes version
-      ansible.builtin.get_url:
-        url: https://dl.k8s.io/release/stable.txt
-        dest: /tmp/k8s-version.txt
-        mode: "644"
-    - name: Register kubernetes version to host variable
-      changed_when: false
-      ansible.builtin.command:
-        cmd: "cat /tmp/k8s-version.txt"
-      register: "k8s_version"
-
 - name: Download kubectl binary
   ansible.builtin.get_url:
-    url: "https://dl.k8s.io/release/{{ k8s_version.stdout }}/bin/linux/amd64/kubectl"
+    url: "https://dl.k8s.io/release/{{ k8s_version }}/bin/linux/amd64/kubectl"
     dest: /usr/local/bin/kubectl
     mode: "755"
