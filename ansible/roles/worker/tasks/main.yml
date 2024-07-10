@@ -1,0 +1,145 @@
+- name: Ensure worker binaries are available
+  loop:
+    - kube-proxy
+    - kubelet
+  ansible.builtin.get_url:
+    url: "https://dl.k8s.io/release/{{ k8s_version }}/bin/linux/amd64/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    mode: "755"
+
+- name: Create installation directories
+  loop:
+    - kubelet
+    - kube-proxy
+    - kubernetes/pki
+  ansible.builtin.file:
+    state: directory
+    path: "/var/lib/{{ item }}"
+    mode: "755"
+
+- name: Generate worker node key pair
+  community.crypto.openssl_privatekey:
+    state: present
+    path: "/home/vagrant/{{ inventory_hostname }}.key"
+    type: RSA
+    size: 2048
+
+- name: Create node certificate signing request
+  community.crypto.openssl_csr:
+    state: present
+    path: "/home/vagrant/{{ inventory_hostname }}.csr"
+    privatekey_path: "/home/vagrant/{{ inventory_hostname }}.key"
+    CN: "system:node:{{ inventory_hostname }}"
+    O: "system:nodes"
+    basic_constraints:
+      - "CA:FALSE"
+    key_usage:
+      - "nonRepudiation"
+      - "digitalSignature"
+      - "keyEncipherment"
+    subject_alt_name:
+      - "DNS:{{ inventory_hostname }}"
+      - "IP:{{ ansible_host }}"
+
+- name: Fetch the CSR to ansible controller
+  ansible.builtin.fetch:
+    src: "/home/vagrant/{{ inventory_hostname }}.csr"
+    dest: /tmp
+
+- name: Sign node certificate signing request
+  delegate_to: controlplane01
+  block:
+    - name: Copy CSR to controller node
+      ansible.builtin.copy:
+        src: "/tmp/{{ inventory_hostname }}/home/vagrant/{{ inventory_hostname }}.csr"
+        dest: /tmp
+        mode: "644"
+    - name: Generate X509 certificate
+      community.crypto.x509_certificate:
+        state: present
+        provider: ownca
+        path: "/tmp/{{ inventory_hostname }}.crt"
+        csr_path: "/tmp/{{ inventory_hostname }}.csr"
+        ownca_path: "/home/vagrant/ca.crt"
+        ownca_privatekey_path: "/home/vagrant/ca.key"
+        ownca_not_after: +1000d
+    - name: Fetch X509 certificate to ansible controller
+      ansible.builtin.fetch:
+        src: "/tmp/{{ inventory_hostname }}.crt"
+        dest: /tmp
+        mode: "644"
+
+- name: Copy X509 certificate to node
+  ansible.builtin.copy:
+    src: "/tmp/{{ inventory_hostname }}/tmp/{{ inventory_hostname }}.crt"
+    dest: "/home/vagrant/{{ inventory_hostname }}.crt"
+    mode: "644"
+
+- name: Generate kubelet kube config
+  changed_when: true
+  ansible.builtin.shell:
+    cmd: >
+      kubectl config set-cluster kubernetes-the-hard-way \
+        --certificate-authority=/var/lib/kubernetes/pki/ca.crt \
+        --server=https://{{ hostvars['loadbalancer']['ansible_host'] }}:6443 \
+        --kubeconfig={{ inventory_hostname }}.kubeconfig
+
+      kubectl config set-credentials system:node:{{ inventory_hostname }} \
+        --client-certificate=/var/lib/kubernetes/pki/{{ inventory_hostname }}.crt \
+        --client-key=/var/lib/kubernetes/pki/{{ inventory_hostname }}.key \
+        --kubeconfig={{ inventory_hostname }}.kubeconfig
+
+      kubectl config set-context default \
+        --cluster=kubernetes-the-hard-way \
+        --user=system:node:{{ inventory_hostname }} \
+        --kubeconfig={{ inventory_hostname }}.kubeconfig
+
+      kubectl config use-context default --kubeconfig={{ inventory_hostname }}.kubeconfig
+
+- name: Copy keys and config to directories
+  loop:
+    - src: "/home/vagrant/{{ inventory_hostname }}.key"
+      dest: "/var/lib/kubernetes/pki/{{ inventory_hostname }}.key"
+    - src: "/home/vagrant/{{ inventory_hostname }}.crt"
+      dest: "/var/lib/kubernetes/pki/{{ inventory_hostname }}.crt"
+    - src: "/home/vagrant/{{ inventory_hostname }}.kubeconfig"
+      dest: "/var/lib/kubelet/kubelet.kubeconfig"
+    - src: "/home/vagrant/ca.crt"
+      dest: "/var/lib/kubernetes/pki/ca.crt"
+    - src: "/home/vagrant/kube-proxy.key"
+      dest: "/var/lib/kubernetes/pki/kube-proxy.key"
+    - src: "/home/vagrant/kube-proxy.crt"
+      dest: "/var/lib/kubernetes/pki/kube-proxy.crt"
+  ansible.builtin.copy:
+    remote_src: true
+    src: "{{ item['src'] }}"
+    dest: "{{ item['dest'] }}"
+    mode: "{{ item['src'] is search('ca.crt|kubeconfig') | ternary('644', '600') }}"
+
+- name: Add kube config files
+  loop:
+    - kubelet
+    - kube-proxy
+  ansible.builtin.template:
+    src: "{{ item }}-config.yaml.j2"
+    dest: "/var/lib/{{ item }}/{{ item }}-config.yaml"
+    mode: "644"
+
+- name: Copy systemd unit file
+  loop:
+    - kubelet
+    - kube-proxy
+  ansible.builtin.template:
+    src: "{{ item }}.service.j2"
+    dest: /etc/systemd/system/{{ item }}.service
+    mode: "644"
+
+- name: Ensure services are enabled
+  loop:
+    - kubelet
+    - kube-proxy
+  ansible.builtin.systemd_service:
+    state: started
+    name: "{{ item }}"
+    daemon_reload: true
+    enabled: true

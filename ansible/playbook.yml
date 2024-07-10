@@ -154,3 +154,9 @@
     - become: true
       role: containerd
       tags: cri
+    - become: true
+      role: worker
+      tags:
+        - worker
+        - kubelet
+        - kube-proxy

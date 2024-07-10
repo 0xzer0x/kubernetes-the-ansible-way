@@ -33,6 +33,12 @@
         dest: "/vagrant/ansible/certs/{{ item }}"
         mode: "644"
 
+- name: Copy certificate verification script
+  ansible.builtin.copy:
+    src: "cert_verify.sh"
+    dest: "~/cert_verify.sh"
+    mode: "755"
+
 - name: Generate certificates for kubernetes components
   loop:
     - filename: admin
@@ -64,9 +70,3 @@
       O: Kubernetes
   ansible.builtin.include_tasks:
     file: item-certificate.yml
-
-- name: Copy certificate verification script
-  ansible.builtin.copy:
-    src: "cert_verify.sh"
-    dest: "~/cert_verify.sh"
-    mode: "755"
