@@ -1,162 +1,100 @@
-- name: Add kernel modules
+- name: Prepare nodes
   hosts: all
   become: true
   tags: setup
+  pre_tasks:
+    - name: Disable firewall
+      community.general.ufw:
+        state: disabled
   roles:
     - kernel-modules
-    - ssh
+    - binaries
     - dns
-    - kubectl
 
-- name: Create SSH keypair for master
-  hosts: controlplane01
-  tags: ssh
-  tasks:
-    - name: Create SSH keypair
-      community.crypto.openssh_keypair:
-        path: "/home/vagrant/.ssh/master_id_ed25519"
-        type: ed25519
-        owner: vagrant
-        group: vagrant
-
-    - name: Register the public key value
-      ansible.builtin.command:
-        cmd: "cat /home/vagrant/.ssh/master_id_ed25519.pub"
-      register: master_id_pub
-      changed_when: false
-
-    - name: Add SSH config
-      ansible.builtin.copy:
-        content: |
-          Host *
-          IdentityFile ~/.ssh/master_id_ed25519
-        dest: "/home/vagrant/.ssh/config"
-        mode: "644"
-
-- name: Add master public key to authorized keys
-  hosts: all:!controlplane01
-  tags: configure
-  tasks:
-    - name: Add master to authorized key
-      ansible.posix.authorized_key:
-        user: "{{ ansible_user }}"
-        key: "{{ hostvars['controlplane01'].master_id_pub.stdout }}"
-
-- name: Create CA and client certificates
+- name: Create certificates and kubeconfigs
   hosts: controlplane01
   tags: certificates
   roles:
     - ca-cert
+    - kubeconfig
 
-- name: Distribute the certificates
+- name: Distribute the certificates and kubeconfigs
   hosts: all
   tags: certificates
   tasks:
     - name: Copy all keys and certificates to control plane nodes
       when: inventory_hostname in groups['controlplane']
-      with_fileglob:
-        - "ansible/certs/*.crt"
-        - "ansible/certs/*.key"
-      ansible.builtin.copy:
-        src: "{{ item }}"
-        dest: "~/{{ item | regex_replace('.*/(.*)$', '\\1') }}"
-        mode: "644"
+      block:
+        - name: Copy all keys and certificates to controlplane nodes
+          with_fileglob:
+            - "certs/*.crt"
+            - "certs/*.key"
+          ansible.builtin.copy:
+            src: "{{ item }}"
+            dest: "~/{{ item | regex_replace('.*/(.*)$', '\\1') }}"
+            mode: "644"
+        - name: Copy kubeconfig files for controlplane components
+          loop:
+            - admin
+            - kube-scheduler
+            - kube-controller-manager
+          ansible.builtin.copy:
+            src: "kubeconfig/{{ item }}.kubeconfig"
+            dest: "~/{{ item }}.kubeconfig"
+            mode: "644"
 
-    - name: Copy all keys and certificates to control plane nodes
+    - name: Copy files to worker nodes
       when: inventory_hostname in groups['nodes']
-      loop:
-        - ca.crt
-        - kube-proxy.crt
-        - kube-proxy.key
-      ansible.builtin.copy:
-        src: "ansible/certs/{{ item }}"
-        dest: "~/{{ item }}"
-        mode: "644"
-
-- name: Create kubeconfig files
-  hosts: controlplane01
-  tags: kubeconfig
-  tasks:
-    - name: Generate kubeconfig file
-      changed_when: true
-      loop:
-        - filename: kube-proxy
-          user: system:kube-proxy
-        - filename: kube-controller-manager
-          user: system:kube-controller-manager
-        - filename: kube-scheduler
-          user: system:kube-scheduler
-        - filename: admin
-          user: admin
-      ansible.builtin.shell:
-        cmd: >
-          kubectl config set-cluster kubernetes-the-hard-way
-          --certificate-authority={{ (item['user'] == 'admin') | ternary('', '/var/lib/kubernetes/pki/') + 'ca.crt' }}
-          --server=https://{{ (item['filename'] == 'kube-proxy') | ternary('192.168.1.30', '127.0.0.1') }}:6443
-          --kubeconfig=/vagrant/ansible/kubeconfig/{{ item['filename'] }}.kubeconfig
-
-          kubectl config set-credentials {{ item['user'] }}
-          --client-certificate={{ (item['user'] == 'admin') | ternary('', '/var/lib/kubernetes/pki/') + item['filename'] }}.crt
-          --client-key={{ (item['user'] == 'admin') | ternary('', '/var/lib/kubernetes/pki/') + item['filename'] }}.key
-          --kubeconfig=/vagrant/ansible/kubeconfig/{{ item['filename'] }}.kubeconfig
-
-          kubectl config set-context default
-          --cluster=kubernetes-the-hard-way
-          --user={{ item['user'] }}
-          --kubeconfig=/vagrant/ansible/kubeconfig/{{ item['filename'] }}.kubeconfig
-
-          kubectl config use-context default --kubeconfig=/vagrant/ansible/kubeconfig/{{ item['filename'] }}.kubeconfig
-
-- name: Distribute the kubeconfig files
-  hosts: all
-  tags: kubeconfig
-  tasks:
-    - name: Copy kube-proxy config to nodes
-      when: inventory_hostname in groups['nodes']
-      ansible.builtin.copy:
-        src: kubeconfig/kube-proxy.kubeconfig
-        dest: ~/kube-proxy.kubeconfig
-        mode: "644"
-
-    - name: Copy control plane kubeconfig to control nodes
-      when: inventory_hostname in groups['controlplane']
-      loop:
-        - admin
-        - kube-controller-manager
-        - kube-scheduler
-      ansible.builtin.copy:
-        src: "kubeconfig/{{ item }}.kubeconfig"
-        dest: "~/{{ item }}.kubeconfig"
-        mode: "644"
+      block:
+        - name: Copy CA certificate and kube-proxy credentials to worker
+          loop:
+            - ca.crt
+            - kube-proxy.crt
+            - kube-proxy.key
+          ansible.builtin.copy:
+            src: "certs/{{ item }}"
+            dest: "~/{{ item }}"
+            mode: "644"
+        - name: Copy kube-proxy config to nodes
+          ansible.builtin.copy:
+            src: kubeconfig/kube-proxy.kubeconfig
+            dest: ~/kube-proxy.kubeconfig
+            mode: "644"
 
 - name: Configure the control plane components
   hosts: controlplane
+  become: true
+  tags:
+    - controller
   roles:
-    - become: true
-      tags: etcd
-      role: etcd
-    - become: true
-      tags: controller
-      role: controller
+    - etcd
+    - controller
 
 - name: Configure the load balancer
   hosts: loadbalancer
+  become: true
+  tags:
+    - loadbalancer
   roles:
-    - become: true
-      role: haproxy
-      tags:
-        - loadbalancer
-        - haproxy
+    - haproxy
 
 - name: Install CRI workers
   hosts: nodes
+  become: true
+  tags:
+    - cri
+    - worker
   roles:
-    - become: true
-      role: containerd
-      tags: cri
-    - become: true
-      role: worker
-      tags:
-        - worker
-        - kubelet
-        - kube-proxy
+    - containerd
+    - worker
+
+- name: Configure cluster
+  hosts: controlplane01
+  tags:
+    - pod-networking
+    - apiserver-to-kubelet
+    - coredns
+  roles:
+    - flannel
+    - kubelet-rbac
+    - coredns
