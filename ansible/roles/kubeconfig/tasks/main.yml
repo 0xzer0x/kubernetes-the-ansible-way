@@ -1,0 +1,14 @@
+- name: Generate kubeconfig file
+  loop:
+    - filename: kube-proxy
+      user: system:kube-proxy
+    - filename: kube-controller-manager
+      user: system:kube-controller-manager
+    - filename: kube-scheduler
+      user: system:kube-scheduler
+    - filename: admin
+      user: admin
+  ansible.builtin.template:
+    src: item.kubeconfig.j2
+    dest: /vagrant/ansible/kubeconfig/{{ item['filename'] }}.kubeconfig
+    mode: "644"
