@@ -1,0 +1,8 @@
+- name: Deploy API server to kubelet cluster role
+  loop:
+    - apiserver-kubelet-clusterrole.yml
+    - apiserver-kubelet-binding.yml
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: ~/admin.kubeconfig
+    resource_definition: "{{ lookup('file', item) | from_yaml }}"
