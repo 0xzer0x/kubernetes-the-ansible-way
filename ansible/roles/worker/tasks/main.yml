@@ -1,12 +1,3 @@
-- name: Ensure worker binaries are available
-  loop:
-    - kube-proxy
-    - kubelet
-  ansible.builtin.get_url:
-    url: "https://dl.k8s.io/release/{{ k8s_version }}/bin/linux/amd64/{{ item }}"
-    dest: "/usr/local/bin/{{ item }}"
-    mode: "755"
-
 - name: Create installation directories
   loop:
     - kubelet
@@ -76,26 +67,12 @@
     mode: "644"
 
 - name: Generate kubelet kube config
-  changed_when: true
-  ansible.builtin.shell:
-    cmd: >
-      kubectl config set-cluster kubernetes-the-hard-way \
-        --certificate-authority=/var/lib/kubernetes/pki/ca.crt \
-        --server=https://{{ hostvars['loadbalancer']['ansible_host'] }}:6443 \
-        --kubeconfig={{ inventory_hostname }}.kubeconfig
-
-      kubectl config set-credentials system:node:{{ inventory_hostname }} \
-        --client-certificate=/var/lib/kubernetes/pki/{{ inventory_hostname }}.crt \
-        --client-key=/var/lib/kubernetes/pki/{{ inventory_hostname }}.key \
-        --kubeconfig={{ inventory_hostname }}.kubeconfig
-
-      kubectl config set-context default \
-        --cluster=kubernetes-the-hard-way \
-        --user=system:node:{{ inventory_hostname }} \
-        --kubeconfig={{ inventory_hostname }}.kubeconfig
-
-      kubectl config use-context default --kubeconfig={{ inventory_hostname }}.kubeconfig
-
+  become: true
+  become_user: vagrant
+  ansible.builtin.template:
+    src: node.kubeconfig.j2
+    dest: "/home/vagrant/{{ inventory_hostname }}.kubeconfig"
+    mode: "600"
 - name: Copy keys and config to directories
   loop:
     - src: "/home/vagrant/{{ inventory_hostname }}.key"
@@ -108,6 +85,8 @@
       dest: "/var/lib/kubernetes/pki/ca.crt"
     - src: "/home/vagrant/kube-proxy.key"
       dest: "/var/lib/kubernetes/pki/kube-proxy.key"
+    - src: "/home/vagrant/kube-proxy.kubeconfig"
+      dest: "/var/lib/kube-proxy/kube-proxy.kubeconfig"
     - src: "/home/vagrant/kube-proxy.crt"
       dest: "/var/lib/kubernetes/pki/kube-proxy.crt"
   ansible.builtin.copy:
