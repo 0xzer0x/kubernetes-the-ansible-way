@@ -1,0 +1,12 @@
+- name: Deploy coreDNS components
+  loop:
+    - kube-system-serviceaccount.yml
+    - coredns-clusterrole.yml
+    - coredns-binding.yml
+    - coredns-configmap.yml
+    - coredns-deployment.yml
+    - kube-dns-service.yml
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: ~/admin.kubeconfig
+    resource_definition: "{{ lookup('file', item) | from_yaml }}"
