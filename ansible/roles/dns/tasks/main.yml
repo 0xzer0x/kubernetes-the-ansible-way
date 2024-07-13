@@ -1,10 +1,7 @@
 - name: Add nodes to /etc/hosts
   ansible.builtin.lineinfile:
     path: /etc/hosts
-    line: "{{ item }}"
-  loop:
-    - "192.168.56.11 controlplane01"
-    - "192.168.56.12 controlplane02"
-    - "192.168.56.21 node01"
-    - "192.168.56.22 node02"
-    - "192.168.56.30 loadbalancer"
+    line: "{{ hostvars[node]['ansible_host'] }} {{ node }}"
+  loop: "{{ groups['all'] }}"
+  loop_control:
+    loop_var: node
