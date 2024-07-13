@@ -37,34 +37,26 @@
     value: "{{ item.value }}"
     reload: "{{ ansible_loop.index == ansible_loop.length }}"
 
-- name: Add kubernetes apt repository
-  vars:
-    ver: '{{ k8s_version | regex_replace("v(\d+)\.(\d+)\.(\d+)", "v\1.\2") }}'
-  block:
-    - name: Download kubernetes gpg key
-      ansible.builtin.get_url:
-        url: "https://pkgs.k8s.io/core:/stable:/{{ ver }}/deb/Release.key"
-        dest: /tmp/kubernetes-key.asc
-        mode: "644"
-    - name: Dearmor kubernetes gpg key
-      args:
-        creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-      ansible.builtin.command:
-        cmd: gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg /tmp/kubernetes-key.asc
-    - name: Add apt repository
-      ansible.builtin.apt_repository:
-        state: present
-        repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/{{ ver }}/deb/ /"
-
-- name: Install container runtime and networking plugins
-  ansible.builtin.apt:
-    update_cache: true
-    name:
-      - containerd
-      - kubernetes-cni
-      - kubectl
-      - ipvsadm
-      - ipset
+# - name: Install container runtime and networking plugins
+#   ansible.builtin.apt:
+#     update_cache: true
+#     name:
+#       - containerd
+#       - ipvsadm
+#       - ipset
+#
+# - name: Install CNI plugins
+#   block:
+#     - name: Create CNI directory
+#       ansible.builtin.file:
+#         state: directory
+#         path: /opt/cni/bin
+#         mode: "755"
+#     - name: Download CNI plugins
+#       ansible.builtin.unarchive:
+#         remote_src: true
+#         src: https://github.com/containernetworking/plugins/releases/download/v1.5.1/cni-plugins-linux-amd64-v1.5.1.tgz
+#         dest: /opt/cni/bin
 
 - name: Configure containerd
   block:
@@ -86,8 +78,9 @@
       ansible.builtin.lineinfile:
         state: present
         path: /etc/containerd/config.toml
-        regexp: "SystemdCgroup = false"
-        line: "SystemCgroup = true"
+        regexp: "^(.*)SystemdCgroup = false"
+        line: '\1SystemdCgroup = true'
+        backrefs: true
     - name: Restart containerd service
       ansible.builtin.service:
         state: restarted
