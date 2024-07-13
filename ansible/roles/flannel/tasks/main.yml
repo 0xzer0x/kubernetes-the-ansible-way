@@ -1,0 +1,5 @@
+- name: Deploy flannel pod network
+  kubernetes.core.k8s:
+    kubeconfig: "~/admin.kubeconfig"
+    state: present
+    src: https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml

@@ -1,0 +1,5 @@
+- name: Deploy weave pod network
+  kubernetes.core.k8s:
+    kubeconfig: "~/admin.kubeconfig"
+    state: present
+    src: https://reweave.azurewebsites.net/k8s/{{ k8s_version | regex_replace('^v(\d+)\.(\d+)\.(\d+)', 'v\1.\2') }}/net.yaml
