@@ -1,0 +1,42 @@
+- name: Download kubectl binary
+  ansible.builtin.get_url:
+    url: "https://dl.k8s.io/release/{{ k8s_version }}/bin/linux/amd64/kubectl"
+    dest: /usr/local/bin/kubectl
+    mode: "755"
+
+- name: Download controller binaries
+  when: inventory_hostname in groups['controlplane']
+  loop:
+    - kube-apiserver
+    - kube-scheduler
+    - kube-controller-manager
+  ansible.builtin.get_url:
+    url: "https://dl.k8s.io/release/{{ k8s_version }}/bin/linux/amd64/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    mode: "755"
+
+- name: Download worker binaries
+  when: inventory_hostname in groups['nodes']
+  loop:
+    - kubelet
+    - kube-proxy
+  ansible.builtin.get_url:
+    url: "https://dl.k8s.io/release/{{ k8s_version }}/bin/linux/amd64/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    mode: "755"
+
+- name: Ensure neccessary packages are installed
+  become: true
+  ansible.builtin.apt:
+    update_cache: true
+    state: present
+    name:
+      - python3-pip
+      - conntrack
+      - socat
+      - ipset
+
+- name: Ensure kubernetes python client is installed
+  ansible.builtin.pip:
+    state: present
+    name: kubernetes
