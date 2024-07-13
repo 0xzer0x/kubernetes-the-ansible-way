@@ -4,13 +4,6 @@
     state: present
     name: haproxy
 
-- name: Add firewall rule to allow API traffic
-  community.general.ufw:
-    state: enabled
-    rule: allow
-    proto: tcp
-    to_port: 6443
-
 - name: Copy haproxy configuration
   ansible.builtin.template:
     src: haproxy.cfg.t2
