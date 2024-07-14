@@ -1,0 +1,18 @@
+- name: Configure default kubeconfig
+  ansible.builtin.shell:
+    creates: ~/.kube/config
+    cmd: >
+      kubectl config set-cluster kubernetes-the-ansible-way \
+        --certificate-authority=ca.crt \
+        --embed-certs=true \
+        --server=https://{{ hostvars['loadbalancer']['ansible_host'] }}:6443
+
+      kubectl config set-credentials admin \
+        --client-certificate=admin.crt \
+        --client-key=admin.key
+
+      kubectl config set-context kubernetes-the-ansible-way \
+        --cluster=kubernetes-the-ansible-way \
+        --user=admin
+
+      kubectl config use-context kubernetes-the-ansible-way
