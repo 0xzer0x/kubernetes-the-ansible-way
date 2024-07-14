@@ -32,17 +32,19 @@
       - keyEncipherment
     extended_key_usage:
       - serverAuth
-    subject_alt_name:
-      - "DNS:kubernetes"
-      - "DNS:kubernetes.default"
-      - "DNS:kubernetes.default.svc"
-      - "DNS:kubernetes.default.svc.cluster"
-      - "DNS:kubernetes.default.svc.cluster.local"
-      - "IP:10.96.0.1"
-      - "IP:192.168.56.11"
-      - "IP:192.168.56.12"
-      - "IP:192.168.56.30"
-      - "IP:127.0.0.1"
+    subject_alt_name: >
+      {{
+        [
+          "DNS:kubernetes",
+          "DNS:kubernetes.default",
+          "DNS:kubernetes.default.svc",
+          "DNS:kubernetes.default.svc.cluster",
+          "DNS:kubernetes.default.svc.cluster.local",
+          "IP:127.0.0.1",
+          "IP:10.96.0.1",
+          "IP:" + hostvars['loadbalancer']['ansible_host']
+        ] + controlplane_ips | map('regex_replace', '^(.*)$', 'IP:\1') | list
+      }}
 
 - name: Generate certificate signing request for the API server kubelet client
   when: "item['filename'] == 'apiserver-kubelet-client'"
@@ -77,10 +79,10 @@
       - nonRepudiation
       - digitalSignature
       - keyEncipherment
-    subject_alt_name:
-      - IP:192.168.56.11
-      - IP:192.168.56.12
-      - IP:127.0.0.1
+    subject_alt_name: >-
+      {{
+           ["IP:127.0.0.1"] + controlplane_ips | map('regex_replace', '^(.*)$', 'IP:\1') | list
+      }}
 
 - name: Genrate the X509 certificate using the CA key
   community.crypto.x509_certificate:
