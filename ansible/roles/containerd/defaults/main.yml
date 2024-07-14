@@ -1,0 +1,4 @@
+---
+apt_update: false
+install_cni: true
+cni_version: v1.5.1

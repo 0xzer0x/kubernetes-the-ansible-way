@@ -30,33 +30,35 @@
       value: 1
     - key: net.ipv4.ip_forward
       value: 1
-  ansible.builtin.sysctl:
+  ansible.posix.sysctl:
     state: present
     sysctl_file: /etc/sysctl.d/k8s.conf
     name: "{{ item.key }}"
     value: "{{ item.value }}"
     reload: "{{ ansible_loop.index == ansible_loop.length }}"
 
-# - name: Install container runtime and networking plugins
-#   ansible.builtin.apt:
-#     update_cache: true
-#     name:
-#       - containerd
-#       - ipvsadm
-#       - ipset
-#
-# - name: Install CNI plugins
-#   block:
-#     - name: Create CNI directory
-#       ansible.builtin.file:
-#         state: directory
-#         path: /opt/cni/bin
-#         mode: "755"
-#     - name: Download CNI plugins
-#       ansible.builtin.unarchive:
-#         remote_src: true
-#         src: https://github.com/containernetworking/plugins/releases/download/v1.5.1/cni-plugins-linux-amd64-v1.5.1.tgz
-#         dest: /opt/cni/bin
+- name: Install container runtime and networking plugins
+  ansible.builtin.apt:
+    update_cache: "{{ apt_update }}"
+    name:
+      - containerd
+      - ipvsadm
+      - ipset
+
+- name: Install CNI plugins
+  when: install_cni == True
+  block:
+    - name: Create CNI directory
+      ansible.builtin.file:
+        state: directory
+        path: /opt/cni/bin
+        mode: "755"
+
+    - name: Download CNI plugins
+      ansible.builtin.unarchive:
+        remote_src: true
+        src: https://github.com/containernetworking/plugins/releases/download/{{ cni_version }}/cni-plugins-linux-amd64-{{ cni_version }}.tgz
+        dest: /opt/cni/bin
 
 - name: Configure containerd
   block:
@@ -65,22 +67,26 @@
         state: directory
         path: /etc/containerd
         mode: "755"
+
     - name: Generate default containerd config
       changed_when: false
       ansible.builtin.command: containerd config default
       register: containerd_config
+
     - name: Add /etc/containerd/config.toml
       ansible.builtin.copy:
         content: "{{ containerd_config.stdout }}"
         dest: /etc/containerd/config.toml
         mode: "644"
+
     - name: Modify config to use system cgroup
       ansible.builtin.lineinfile:
         state: present
+        backrefs: true
         path: /etc/containerd/config.toml
         regexp: "^(.*)SystemdCgroup = false"
         line: '\1SystemdCgroup = true'
-        backrefs: true
+
     - name: Restart containerd service
       ansible.builtin.service:
         state: restarted
