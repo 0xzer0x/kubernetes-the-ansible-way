@@ -1,5 +1,5 @@
 frontend kubernetes
-    bind {{ hostvars['loadbalancer']['ansible_host'] }}:6443
+    bind {{ ansible_host }}:6443
     option tcplog
     mode tcp
     default_backend kubernetes-controlplane-nodes
@@ -8,5 +8,6 @@ backend kubernetes-controlplane-nodes
     mode tcp
     balance roundrobin
     option tcp-check
-    server controlplane01 {{ hostvars['controlplane01']['ansible_host'] }}:6443 check fall 3 rise 2
-    server controlplane02 {{ hostvars['controlplane02']['ansible_host'] }}:6443 check fall 3 rise 2
+{% for node in groups['controlplane'] %}
+    server {{ node }} {{ hostvars[node]['ansible_host'] }}:6443 check fall 3 rise 2
+{% endfor %}
