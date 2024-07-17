@@ -1,13 +1,20 @@
-- name: Ensure kernel modules are added to /etc/modules
+- name: Create sysctl configuration file
+  ansible.builtin.file:
+    state: touch
+    path: /etc/modules-load.d/kubernetes.conf
+    mode: "644"
+
+- name: Ensure kernel modules are added to modules-load.d
   ansible.builtin.lineinfile:
     state: present
-    path: /etc/modules
+    path: /etc/modules-load.d/kubernetes.conf
     line: "{{ item }}"
   loop:
     - "ip_vs"
     - "ip_vs_rr"
     - "ip_vs_wrr"
     - "ip_vs_sh"
+    - "overlay"
     - "br_netfilter"
     - "nf_conntrack"
 
@@ -16,18 +23,31 @@
     state: restarted
     name: "systemd-modules-load.service"
 
-- name: Add kernel module parameters configuration
-  ansible.builtin.copy:
-    dest: /etc/sysctl.d/10-kubernetes.conf
+- name: Create sysctl configuration file
+  ansible.builtin.file:
+    state: touch
+    path: /etc/sysctl.d/10-kubernetes.conf
     mode: "644"
-    content: |
-      net.ipv6.conf.all.disable_ipv6 = 1
-      net.ipv6.conf.default.disable_ipv6 = 1
-      net.ipv6.conf.lo.disable_ipv6 = 1
-      net.bridge.bridge-nf-call-iptables=1
-      net.ipv4.ip_forward=1
 
-- name: Reload kernel parameters using sysctl
-  changed_when: true
-  ansible.builtin.command:
-    cmd: "sysctl --system"
+- name: Add module parameters to sysctl configuration file
+  loop_control:
+    extended: true
+  loop:
+    - key: net.bridge.bridge-nf-call-iptables
+      value: 1
+    - key: net.bridge.bridge-nf-call-ip6tables
+      value: 1
+    - key: net.ipv4.ip_forward
+      value: 1
+    - key: net.ipv6.conf.all.disable_ipv6
+      value: 1
+    - key: net.ipv6.conf.default.disable_ipv6
+      value: 1
+    - key: net.ipv6.conf.lo.disable_ipv6
+      value: 1
+  ansible.posix.sysctl:
+    state: present
+    sysctl_file: /etc/sysctl.d/10-kubernetes.conf
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    reload: "{{ ansible_loop.index == ansible_loop.length }}"
